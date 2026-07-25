@@ -67,7 +67,8 @@ raw zone table build
 --    city_population VARCHAR(16777216)
 -- );
 
--- to-fix THE Issue: complete table build Declarative 
+-- Country dimension table
+-- Includes city_id required for downstream joins
 CREATE OR ALTER TABLE {{env}}_tasty_bytes.raw_pos.country
 (
    country_id NUMBER(18,0),
