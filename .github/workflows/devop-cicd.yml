@@ -1,77 +1,142 @@
 name: Deploy Templatized Data Environment
 
 on:
-  pull_request:
-    types: [closed]
-    branches:
-      - staging
-      - main
-  push:
-    branches:
-      - staging
-      - main
+pull_request:
+types: [closed]
+branches:
+- Staging
+- main
+push:
+branches:
+- Staging
+- main
 
 jobs:
-  deploy_data_environment:
-    # Only run when PR is merged or on direct push to environment branches
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
-    runs-on: ubuntu-latest
+deploy_data_environment:
+# Only run when PR is merged or on direct push to environment branches
+if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
+runs-on: ubuntu-latest
 
-    env:
-      # Read connection secret
-      SNOWFLAKE_CONNECTIONS_SNOWFLAKE_DATA_ENGINEERING_2026_DEVOPS_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-      SNOWFLAKE_CONNECTIONS_SNOWFLAKE_DATA_ENGINEERING_2026_DEVOPS_USER: ${{ secrets.SNOWFLAKE_USER }}
-      SNOWFLAKE_CONNECTIONS_SNOWFLAKE_DATA_ENGINEERING_2026_DEVOPS_AUTHENTICATOR: SNOWFLAKE_JWT
-      SNOWFLAKE_CONNECTIONS_SNOWFLAKE_DATA_ENGINEERING_2026_DEVOPS_PRIVATE_KEY_FILE: ~/.snowflake/rsa_key.p8
-      # SNOWFLAKE_CONNECTIONS_SNOWFLAKE_DATA_ENGINEERING_2026_DEVOPS_PASSWORD: ${{ secrets.SNOWFLAKE_DATA_ENGINEERING_2026_DEVOPS_PASSWORD }}
+env:
+  # Snowflake connection configuration
+  SNOWFLAKE_CONNECTIONS_SNOWFLAKE_DATA_ENGINEERING_2026_DEVOPS_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+  SNOWFLAKE_CONNECTIONS_SNOWFLAKE_DATA_ENGINEERING_2026_DEVOPS_USER: ${{ secrets.SNOWFLAKE_USER }}
+  SNOWFLAKE_CONNECTIONS_SNOWFLAKE_DATA_ENGINEERING_2026_DEVOPS_AUTHENTICATOR: SNOWFLAKE_JWT
+  SNOWFLAKE_CONNECTIONS_SNOWFLAKE_DATA_ENGINEERING_2026_DEVOPS_PRIVATE_KEY_FILE: ~/.snowflake/rsa_key.p8
 
-    steps:
-      # Checkout step is necessary to access repository files
-      - name: Checkout repository
-        uses: actions/checkout@v4
+steps:
 
-      # Create RSA private key for Snowflake JWT authentication
-      - name: Configure Snowflake RSA private key
-        run: |
-          mkdir -p ~/.snowflake
-          echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" > ~/.snowflake/rsa_key.p8
-          chmod 600 ~/.snowflake/rsa_key.p8
+  # ---------------------------------------------------------
+  # 1. Checkout repository
+  # ---------------------------------------------------------
+  - name: Checkout repository
+    uses: actions/checkout@v4
 
-      # Determine environment based on target branch
-      - name: Set environment
-        id: set_env
-        run: |
-          TARGET_BRANCH="${GITHUB_BASE_REF:-${GITHUB_REF#refs/heads/}}"
-          
-          if [[ $TARGET_BRANCH == "staging" ]]; then
-            echo "DEPLOY_ENV=staging" >> $GITHUB_ENV
-            echo "Environment set to staging"
-          elif [[ $TARGET_BRANCH == "main" ]]; then
-            echo "DEPLOY_ENV=prod" >> $GITHUB_ENV
-            echo "Environment set to production"
-          else
-            echo "Unexpected branch: $TARGET_BRANCH"
-            exit 1
-          fi
+  # ---------------------------------------------------------
+  # 2. Debug GitHub context
+  # ---------------------------------------------------------
+  - name: Debug GitHub context
+    run: |
+      echo "===== GITHUB CONTEXT ====="
+      echo "GITHUB_EVENT_NAME=$GITHUB_EVENT_NAME"
+      echo "GITHUB_REF=$GITHUB_REF"
+      echo "GITHUB_REF_NAME=$GITHUB_REF_NAME"
+      echo "GITHUB_SHA=$GITHUB_SHA"
+      echo "GITHUB_BASE_REF=$GITHUB_BASE_REF"
+      echo "GITHUB_HEAD_REF=$GITHUB_HEAD_REF"
 
-      # Install Snowflake CLI GitHub Action and point to config file
-      - name: Install SnowflakeCLI
-        uses: snowflakedb/snowflake-cli-action@v1.5
-        with:
-          cli-version: "latest"
-          default-config-file-path: "config.toml"
+      echo "===== CHECKED OUT COMMIT ====="
+      git log -1 --oneline --decorate
 
-      # Fetch latest changes from the repository to Snowflake
-      - name: Fetch latest changes to Snowflake
-        run: snow git fetch DEVOPS_DB.PUBLIC.MY_REPO
+      echo "===== WORKFLOW FILE ====="
+      git show HEAD:.github/workflows/devop-cicd.yml | sed -n '1,160p'
 
-      # Deploy templates to the data environment -
-      - name: Deploy templates to data environment
-        run: |
-          # Export TARGET_BRANCH for use in this step
-          echo "Using branch: ${GITHUB_REF_NAME}"
-          snow git execute @MY_REPO/branches/${GITHUB_REF_NAME}/module-1/hamburg_weather/pipeline/data/ \
-          -D "env='${{ env.DEPLOY_ENV }}'" \
-          --database=DEVOPS_DB \
-          --schema=PUBLIC
-          --name=MY_REPO
+  # ---------------------------------------------------------
+  # 3. Configure RSA private key
+  # ---------------------------------------------------------
+  - name: Configure Snowflake RSA private key
+    run: |
+      mkdir -p ~/.snowflake
+
+      printf '%s\n' "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" \
+        > ~/.snowflake/rsa_key.p8
+
+      chmod 600 ~/.snowflake/rsa_key.p8
+
+  # ---------------------------------------------------------
+  # 4. Validate RSA private key
+  # ---------------------------------------------------------
+  - name: Validate Snowflake RSA private key
+    run: |
+      test -f ~/.snowflake/rsa_key.p8
+      test -s ~/.snowflake/rsa_key.p8
+
+      echo "RSA private key file exists"
+      echo "Key size: $(wc -c < ~/.snowflake/rsa_key.p8) bytes"
+
+      if grep -q "BEGIN PRIVATE KEY" ~/.snowflake/rsa_key.p8; then
+        echo "RSA private key PEM format detected"
+      else
+        echo "ERROR: RSA private key PEM header not detected"
+        exit 1
+      fi
+
+  # ---------------------------------------------------------
+  # 5. Determine deployment environment
+  # ---------------------------------------------------------
+  - name: Set environment
+    id: set_env
+    run: |
+      TARGET_BRANCH="${GITHUB_BASE_REF:-${GITHUB_REF#refs/heads/}}"
+
+      echo "Target branch: $TARGET_BRANCH"
+
+      if [[ "$TARGET_BRANCH" == "Staging" ]]; then
+        echo "DEPLOY_ENV=staging" >> "$GITHUB_ENV"
+        echo "Environment set to staging"
+
+      elif [[ "$TARGET_BRANCH" == "main" ]]; then
+        echo "DEPLOY_ENV=prod" >> "$GITHUB_ENV"
+        echo "Environment set to production"
+
+      else
+        echo "Unexpected branch: $TARGET_BRANCH"
+        exit 1
+      fi
+
+  # ---------------------------------------------------------
+  # 6. Install Snowflake CLI
+  # ---------------------------------------------------------
+  - name: Install SnowflakeCLI
+    uses: snowflakedb/snowflake-cli-action@v1.5
+    with:
+      cli-version: "latest"
+      default-config-file-path: "config.toml"
+
+  # ---------------------------------------------------------
+  # 7. Test Snowflake JWT connection
+  # ---------------------------------------------------------
+  - name: Test Snowflake JWT connection
+    run: |
+      snow connection test
+
+  # ---------------------------------------------------------
+  # 8. Fetch Snowflake Git Repository
+  # ---------------------------------------------------------
+  - name: Fetch latest changes from Snowflake Git repository
+    run: |
+      snow git fetch DEVOPS_DB.PUBLIC.MY_REPO
+
+  # ---------------------------------------------------------
+  # 9. Deploy templates
+  # ---------------------------------------------------------
+  - name: Deploy templates to data environment
+    run: |
+      echo "Using GitHub branch: ${GITHUB_REF_NAME}"
+      echo "Using deployment environment: ${DEPLOY_ENV}"
+
+      snow git execute \
+        @MY_REPO/branches/${GITHUB_REF_NAME}/module-1/hamburg_weather/pipeline/data/ \
+        -D "env='${{ env.DEPLOY_ENV }}'" \
+        --database=DEVOPS_DB \
+        --schema=PUBLIC
