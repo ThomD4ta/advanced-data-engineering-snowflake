@@ -14,7 +14,7 @@ default_connection_name = "snowflake_data_engineering_2026_devops"
 
 account = ""
 user = ""
-host = ""
+host = "PNJIOLQ-NUB16890.snowflakecomputing.com"
 region = "us-west-2"
 port = 443
 database = "DEVOPS_DB"
