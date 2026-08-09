@@ -145,12 +145,43 @@ jobs:
           cli-version: "latest"
           default-config-file-path: "config.toml"
 
+      - name: Validate Snowflake CLI environment mapping
+        run: |
+          echo "===== CONNECTION ENVIRONMENT ====="
+
+          test -n "$SNOWFLAKE_CONNECTIONS_SNOWFLAKE_DATA_ENGINEERING_2026_DEVOPS_ACCOUNT" || {
+            echo "ERROR: Snowflake account environment variable is empty"
+            exit 1
+          }
+
+          test -n "$SNOWFLAKE_CONNECTIONS_SNOWFLAKE_DATA_ENGINEERING_2026_DEVOPS_USER" || {
+            echo "ERROR: Snowflake user environment variable is empty"
+            exit 1
+          }
+
+          test -n "$SNOWFLAKE_CONNECTIONS_SNOWFLAKE_DATA_ENGINEERING_2026_DEVOPS_AUTHENTICATOR" || {
+            echo "ERROR: Snowflake authenticator environment variable is empty"
+            exit 1
+          }
+
+          test -n "$SNOWFLAKE_CONNECTIONS_SNOWFLAKE_DATA_ENGINEERING_2026_DEVOPS_PRIVATE_KEY_FILE" || {
+            echo "ERROR: Snowflake private key path environment variable is empty"
+            exit 1
+          }
+
+          echo "ACCOUNT environment variable: configured"
+          echo "USER environment variable: configured"
+          echo "AUTHENTICATOR environment variable: configured"
+          echo "PRIVATE_KEY_FILE environment variable: configured"
+
       # ---------------------------------------------------------
       # 8. Test Snowflake JWT connection
       # ---------------------------------------------------------
       - name: Test Snowflake JWT connection
         run: |
-          snow connection test
+          echo "Testing explicit Snowflake CLI connection"
+          snow connection list
+          snow connection test --connection snowflake_data_engineering_2026_devops
 
       # ---------------------------------------------------------
       # 9. Fetch Snowflake Git Repository
